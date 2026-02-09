@@ -1,0 +1,11 @@
+# Telegram Bot API
+python-telegram-bot==20.7
+
+# Environment variables
+python-dotenv==1.0.0
+
+# Job scheduling (для Incident.py)
+APScheduler==3.10.4
+
+# Asyncio support (для Alert7.py)
+nest-asyncio==1.5.8
