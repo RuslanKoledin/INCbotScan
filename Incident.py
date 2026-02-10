@@ -133,7 +133,7 @@ def get_priority(text):
             return priority
 
     # Ищем цифру приоритета: "Приоритет: 3", "поднят до 3", "понижен до 3 (Средний)" и т.д.
-    match = re.search(r'(?:Приоритет[:\s]|до\s+)(\d+)', text)
+    match = re.search(r'(?:Приоритет[:\s]\s*|до\s+)(\d+)', text)
     if match:
         priority_number = match.group(1)
         if priority_number == '1':
