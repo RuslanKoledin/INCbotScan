@@ -1,4 +1,9 @@
-# created by virtualenv automatically
-../.venv/Lib
+venv/
+.venv/
+.idea/
+.DS_Store
 *.env
-
+*.log
+*.bak
+__pycache__/
+nohup.out
