@@ -19,20 +19,22 @@ os.environ.pop("HTTPS_PROXY", None)
 os.environ.pop("http_proxy", None)
 os.environ.pop("https_proxy", None)
 
-# Настройка логирования в файл
+# Настройка логирования в файл (только наши логи, без токенов от библиотек)
 LOG_DIR = os.path.dirname(os.path.abspath(__file__))
 LOG_FILE = os.path.join(LOG_DIR, "incident.log")
 
-logging.basicConfig(
-    level=logging.INFO,
-    format="%(asctime)s [%(levelname)s] %(message)s",
-    datefmt="%Y-%m-%d %H:%M:%S",
-    handlers=[
-        logging.FileHandler(LOG_FILE, encoding="utf-8"),
-        logging.StreamHandler()  # дублируем в консоль
-    ]
-)
-logger = logging.getLogger(__name__)
+logger = logging.getLogger("incident_bot")
+logger.setLevel(logging.INFO)
+
+_formatter = logging.Formatter("%(asctime)s [%(levelname)s] %(message)s", datefmt="%Y-%m-%d %H:%M:%S")
+
+_fh = logging.FileHandler(LOG_FILE, encoding="utf-8")
+_fh.setFormatter(_formatter)
+logger.addHandler(_fh)
+
+_sh = logging.StreamHandler()
+_sh.setFormatter(_formatter)
+logger.addHandler(_sh)
 
 INCIDENTS_FILE = "incidents.json"
 
