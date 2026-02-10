@@ -19,6 +19,21 @@ os.environ.pop("HTTPS_PROXY", None)
 os.environ.pop("http_proxy", None)
 os.environ.pop("https_proxy", None)
 
+# Настройка логирования в файл
+LOG_DIR = os.path.dirname(os.path.abspath(__file__))
+LOG_FILE = os.path.join(LOG_DIR, "incident.log")
+
+logging.basicConfig(
+    level=logging.INFO,
+    format="%(asctime)s [%(levelname)s] %(message)s",
+    datefmt="%Y-%m-%d %H:%M:%S",
+    handlers=[
+        logging.FileHandler(LOG_FILE, encoding="utf-8"),
+        logging.StreamHandler()  # дублируем в консоль
+    ]
+)
+logger = logging.getLogger(__name__)
+
 INCIDENTS_FILE = "incidents.json"
 
 BROADCAST_GROUPS = [
@@ -37,6 +52,9 @@ ALLOWED_USERS = [
 
 TZ = ZoneInfo("Asia/Bishkek")
 BOT_START_TIME = datetime.datetime.now(tz=TZ)
+
+# Режим тестирования: True — секунды вместо минут, False — боевой режим
+TEST_MODE = True
 
 
 def load_incidents():
@@ -137,7 +155,7 @@ async def safe_send(bot, chat_info, text):
         new_id = e.new_chat_id
         await bot.send_message(chat_id=new_id, text=text)
     except Exception as e:
-        logging.warning(f"Не удалось отправить сообщение в {chat_id}: {e}")
+        logger.warning(f"Не удалось отправить сообщение в {chat_id}: {e}")
 
 
 def schedule_reminders(app, chat_id, incident_id, start_time, priority):
@@ -147,46 +165,52 @@ def schedule_reminders(app, chat_id, incident_id, start_time, priority):
             try:
                 scheduler.remove_job(job_id)
             except Exception as e:
-                logging.warning(f"Не удалось удалить задание {job_id}: {e}")
+                logger.warning(f"Не удалось удалить задание {job_id}: {e}")
             incident["jobs"] = []
 
     if "средний" in priority.lower() or "низкий" in priority.lower():
-        print(f"Приоритет инцидента {incident_id} не требует напоминаний.")
+        logger.info(f"Приоритет инцидента {incident_id} не требует напоминаний.")
         return []
 
     jobs = []
 
-    # Добавлен параметр misfire_grace_time
+    if TEST_MODE:
+        delay_50 = datetime.timedelta(seconds=50)
+        delay_60 = datetime.timedelta(seconds=60)
+        delay_3h = datetime.timedelta(seconds=180)
+    else:
+        delay_50 = datetime.timedelta(minutes=50)
+        delay_60 = datetime.timedelta(minutes=60)
+        delay_3h = datetime.timedelta(hours=3)
+
     job_50 = scheduler.add_job(
         notify_50_minutes, 'date',
-        run_date=start_time + datetime.timedelta(minutes=50),
+        run_date=start_time + delay_50,
         args=[app, chat_id, incident_id, loop],
         id=f"{incident_id}_50",
         misfire_grace_time=3600
     )
     jobs.append(job_50.id)
 
-    # Добавлен параметр misfire_grace_time
     job_60 = scheduler.add_job(
         notify_60_minutes, 'date',
-        run_date=start_time + datetime.timedelta(minutes=60),
+        run_date=start_time + delay_60,
         args=[app, chat_id, incident_id, loop],
         id=f"{incident_id}_60",
         misfire_grace_time=3600
     )
     jobs.append(job_60.id)
 
-    # Добавлен параметр misfire_grace_time
     job_3h = scheduler.add_job(
         notify_3_hours_later, 'date',
-        run_date=start_time + datetime.timedelta(hours=3),
+        run_date=start_time + delay_3h,
         args=[app, chat_id, incident_id, loop],
         id=f"{incident_id}_3h",
         misfire_grace_time=3600
     )
     jobs.append(job_3h.id)
 
-    print(f"Поставлены напоминания для {incident_id}: {jobs}")
+    logger.info(f"Поставлены напоминания для {incident_id}: {jobs}")
     return jobs
 
 
@@ -275,7 +299,7 @@ def restore_jobs(incidents):
         # Проверяем приоритет - не восстанавливаем для средних/низких
         priority = incident.get("priority", "средний")
         if priority.lower() in ["средний", "низкий"]:
-            print(f"Пропускаем восстановление для {incident_id} - приоритет {priority}")
+            logger.info(f"Пропускаем восстановление для {incident_id} - приоритет {priority}")
             continue
 
         time = incident["time"]
@@ -306,11 +330,11 @@ def restore_jobs(incidents):
 
             incident["jobs"] = jobs
             restored_count += 1
-            print(f"Восстановлены напоминания для {incident_id}")
+            logger.info(f"Восстановлены напоминания для {incident_id}")
 
     if restored_count > 0:
         save_incidents(incidents)
-    print(f"Восстановлено задач по {restored_count} инцидентам. Пересылок не делалось.")
+    logger.info(f"Восстановлено задач по {restored_count} инцидентам. Пересылок не делалось.")
 
 
 JIRA_PATTERN = re.compile(r'ITSMJIRA-\d+')
@@ -325,12 +349,12 @@ async def handle_message(update: Update, context: ContextTypes.DEFAULT_TYPE):
 
     message_time = update.message.date.astimezone(TZ)
     if message_time < BOT_START_TIME:
-        print(f"Пропускаем старое сообщение ({message_time}) — бот стартовал в {BOT_START_TIME}")
+        logger.info(f"Пропускаем старое сообщение ({message_time}) — бот стартовал в {BOT_START_TIME}")
         return
 
     user_id = update.effective_user.id
     if user_id not in ALLOWED_USERS:
-        print(f"Пользователь с ID {user_id} не авторизован.")
+        logger.warning(f"Пользователь с ID {user_id} не авторизован.")
         return
 
     if not update.message.text:
@@ -357,25 +381,25 @@ async def handle_message(update: Update, context: ContextTypes.DEFAULT_TYPE):
     if not (is_new_incident or is_resolution_message or is_rejection_message or is_jira_update or is_priority_update):
         return
 
-    print(f"Получено LIVE-сообщение: '{text}' в чате {chat_id} (в {message_time})")
+    logger.info(f"Получено LIVE-сообщение: '{text}' в чате {chat_id} (в {message_time})")
 
     if is_new_incident:
         key = extract_key(text)
         jira_key = JIRA_PATTERN.search(text)
         if not jira_key:
-            print("Не удалось извлечь JIRA ID из инцидента.")
+            logger.warning("Не удалось извлечь JIRA ID из инцидента.")
             return
 
         incident_id = jira_key.group(0)
         if incident_id in incidents:
-            print(f"Инцидент '{incident_id}' уже существует. Вероятно, дублирующее сообщение — пропускаем.")
+            logger.info(f"Инцидент '{incident_id}' уже существует. Вероятно, дублирующее сообщение — пропускаем.")
             return
 
         # Извлекаем время выявления из текста сообщения
         detection_time = extract_detection_time(text, message_time)
         priority = get_priority(text) or "средний"
         incidents[incident_id] = {"text": text, "chat_id": chat_id, "time": detection_time, "jobs": [], "priority": priority}
-        print(f"Обнаружен новый инцидент: {incident_id} с приоритетом {priority}, время выявления: {detection_time}")
+        logger.info(f"Обнаружен новый инцидент: {incident_id} с приоритетом {priority}, время выявления: {detection_time}")
 
         for group in BROADCAST_GROUPS:
             await safe_send(context.bot, group, text)
@@ -389,17 +413,17 @@ async def handle_message(update: Update, context: ContextTypes.DEFAULT_TYPE):
         replied_text = reply_to.text
         incident_id = extract_jira_key(replied_text)
         if not incident_id or incident_id not in incidents:
-            print("Не удалось найти связанный инцидент.")
+            logger.warning("Не удалось найти связанный инцидент.")
             return
 
         incident = incidents.get(incident_id)
         if incident:
-            print(f"Инцидент '{incident_id}' закрыт. Отменяю напоминания.")
+            logger.info(f"Инцидент '{incident_id}' закрыт. Отменяю напоминания.")
             for job_id in incident.get("jobs", []):
                 try:
                     scheduler.remove_job(job_id)
                 except Exception as e:
-                    logging.warning(f"Не удалось удалить задание {job_id}: {e}")
+                    logger.warning(f"Не удалось удалить задание {job_id}: {e}")
 
             resolution_time = extract_resolution_time(text, message_time)
 
@@ -429,17 +453,17 @@ async def handle_message(update: Update, context: ContextTypes.DEFAULT_TYPE):
         replied_text = reply_to.text
         incident_id = extract_jira_key(replied_text)
         if not incident_id or incident_id not in incidents:
-            print("Не удалось найти связанный инцидент.")
+            logger.warning("Не удалось найти связанный инцидент.")
             return
 
         incident = incidents.get(incident_id)
         if incident:
-            print(f"Инцидент '{incident_id}' отклонен. Отменяю напоминания.")
+            logger.info(f"Инцидент '{incident_id}' отклонен. Отменяю напоминания.")
             for job_id in incident.get("jobs", []):
                 try:
                     scheduler.remove_job(job_id)
                 except Exception as e:
-                    logging.warning(f"Не удалось удалить задание {job_id}: {e}")
+                    logger.warning(f"Не удалось удалить задание {job_id}: {e}")
 
             incident_name = extract_key(incident["text"])
             jira_link = f"\nJIRA: https://jiraportal.cbk.kg/projects/ITSMJIRA/queues/issue/{incident_id}"
@@ -456,19 +480,19 @@ async def handle_message(update: Update, context: ContextTypes.DEFAULT_TYPE):
 
     if is_priority_update:
         if not reply_to:
-            print("Сообщение не является ответом на инцидент.")
+            logger.warning("Сообщение не является ответом на инцидент.")
             return
 
         incident_id = extract_jira_key(reply_to.text)
         if not incident_id or incident_id not in incidents:
-            print("Не удалось найти связанный инцидент.")
+            logger.warning("Не удалось найти связанный инцидент.")
             return
 
         incident = incidents[incident_id]
         priority = get_priority(text)
 
         if not priority:
-            print(f"Не удалось определить приоритет из сообщения.")
+            logger.warning(f"Не удалось определить приоритет из сообщения.")
             return
 
         incident_name = extract_key(incident["text"])
@@ -482,7 +506,7 @@ async def handle_message(update: Update, context: ContextTypes.DEFAULT_TYPE):
         else:
             action = "изменён"
 
-        print(f"Приоритет инцидента '{incident_id}' {action} с {old_priority} до {priority}.")
+        logger.info(f"Приоритет инцидента '{incident_id}' {action} с {old_priority} до {priority}.")
 
         # Рассылка по группам — при любом изменении приоритета
         msg = f"Приоритет инцидента '{incident_name}' {action} до {priority}.\n{incident_id}"
@@ -495,7 +519,7 @@ async def handle_message(update: Update, context: ContextTypes.DEFAULT_TYPE):
             try:
                 scheduler.remove_job(job_id)
             except Exception as e:
-                logging.warning(f"Не удалось удалить задание {job_id}: {e}")
+                logger.warning(f"Не удалось удалить задание {job_id}: {e}")
         incident["jobs"] = []
 
         # Напоминания — только для высокий/критичный
@@ -521,5 +545,5 @@ if __name__ == '__main__':
     application = ApplicationBuilder().token(os.getenv("tg")).proxy(None).build()
     restore_jobs(incidents)
     application.add_handler(MessageHandler(filters.TEXT & (~filters.COMMAND), handle_message))
-    print(f"Запускаем бота... START={BOT_START_TIME}")
+    logger.info(f"Запускаем бота... START={BOT_START_TIME}")
     application.run_polling()
