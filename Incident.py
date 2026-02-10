@@ -54,7 +54,7 @@ TZ = ZoneInfo("Asia/Bishkek")
 BOT_START_TIME = datetime.datetime.now(tz=TZ)
 
 # Режим тестирования: True — секунды вместо минут, False — боевой режим
-TEST_MODE = True
+TEST_MODE = False
 
 
 def load_incidents():
@@ -221,7 +221,7 @@ def notify_50_minutes(app, chat_id, incident_id, loop):
         return
     asyncio.run_coroutine_threadsafe(
         app.bot.send_message(chat_id=chat_id,
-                             text="Прошло 50 минут. Через 10 минут необходимо оповестить!@Elturan, @WikiKarpenko"),
+                             text="Прошло 50 минут. Через 10 минут необходимо оповестить! @monitoring_cbk, @lord312, @WikiKarpenko"),
         loop
     )
 
@@ -230,7 +230,7 @@ def notify_60_minutes(app, chat_id, incident_id, loop):
     if incident_id not in incidents:
         return
     asyncio.run_coroutine_threadsafe(
-        app.bot.send_message(chat_id=chat_id, text="Прошло 60 минут! @WikiKarpenko, @Elturan"), loop
+        app.bot.send_message(chat_id=chat_id, text="Прошло 60 минут! @monitoring_cbk, @lord312, @WikiKarpenko"), loop
     )
 
 
@@ -239,7 +239,7 @@ def notify_3_hours_later(app, chat_id, incident_id, loop):
         return
     asyncio.run_coroutine_threadsafe(
         app.bot.send_message(chat_id=chat_id,
-                             text="Прошло 3 часа! Проверьте статус.@Elturan, @monitoring_cbk,@Emirbk "), loop
+                             text="Прошло 3 часа! Проверьте статус. @monitoring_cbk, @lord312, @WikiKarpenko"), loop
     )
 
 
