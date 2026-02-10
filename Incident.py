@@ -136,7 +136,9 @@ def get_priority(text):
     match = re.search(r'(?:Приоритет[:\s]|до\s+)(\d+)', text)
     if match:
         priority_number = match.group(1)
-        if priority_number in ['1', '2']:
+        if priority_number == '1':
+            return "критичный"
+        elif priority_number == '2':
             return "высокий"
         elif priority_number == '3':
             return "средний"
