@@ -434,8 +434,9 @@ async def handle_message(update: Update, context: ContextTypes.DEFAULT_TYPE):
             # Подсчитываем время на решение
             incident_start_time = incident["time"]
             time_to_resolve = resolution_time - incident_start_time
-            hours = int(time_to_resolve.total_seconds() // 3600)
-            minutes = int((time_to_resolve.total_seconds() % 3600) // 60)
+            total_seconds = max(time_to_resolve.total_seconds(), 0)
+            hours = int(total_seconds // 3600)
+            minutes = int((total_seconds % 3600) // 60)
             time_str = f"{hours} ч {minutes} мин" if hours > 0 else f"{minutes} мин"
 
             jira_link = f"\nJIRA: https://jiraportal.cbk.kg/projects/ITSMJIRA/queues/issue/{extract_jira_key(replied_text)}" if extract_jira_key(
